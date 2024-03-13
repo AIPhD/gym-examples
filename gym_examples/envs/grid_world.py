@@ -7,7 +7,7 @@ import numpy as np
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=5):
+    def __init__(self, render_mode=None, size=8):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
@@ -83,13 +83,16 @@ class GridWorldEnv(gym.Env):
     def step(self, action):
         # Map the action (element of {0,1,2,3}) to the direction we walk in
         direction = self._action_to_direction[action]
+        previous_location = self._action_to_direction
         # We use `np.clip` to make sure we don't leave the grid
         self._agent_location = np.clip(
             self._agent_location + direction, 0, self.size - 1
         )
         # An episode is done iff the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
-        reward = 1 if terminated else 0  # Binary sparse rewards
+        reward = 1 if terminated else -0.01  # Binary sparse rewards
+        if np.array_equal(self._agent_location, previous_location):
+            reward = -0.1
         observation = self._get_obs()
         info = self._get_info()
 
