@@ -45,7 +45,6 @@ def create_maze(size=c.SIZE):
         maze[init_cell[0]][init_cell[1] + 1] = -1
 
     print(maze)
-    print('hello')
 
     while len(sample_walls) > 0:
         new_cell_list_position = random.randrange(len(sample_walls))
@@ -196,7 +195,7 @@ class GridWorldEnv(gym.Env):
         self._target_location = np.asarray([self.size - 1, self.size - 1])
         # Choose the agent's location uniformly at random within the maze
         self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
-        while self._agent_location.tolist() in self.wall_list and np.array_equal(self._target_location, self._agent_location):
+        while self._agent_location.tolist() in self.wall_list or np.array_equal(self._target_location, self._agent_location):
             self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
         # We will sample the target's location randomly until it does not coincide with the agent's location or the walls
