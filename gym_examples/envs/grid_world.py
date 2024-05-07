@@ -44,7 +44,7 @@ def create_maze(size=c.SIZE):
         sample_walls.append([init_cell[0], init_cell[1] + 1])
         maze[init_cell[0]][init_cell[1] + 1] = -1
 
-    print(maze)
+    # print(maze)
 
     while len(sample_walls) > 0:
         new_cell_list_position = random.randrange(len(sample_walls))
@@ -129,7 +129,7 @@ MAZE, WALL_LIST = create_maze()
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=c.SIZE, maze=MAZE, wall_list=WALL_LIST):
+    def __init__(self, render_mode=None, size=c.SIZE, maze=MAZE, wall_list=WALL_LIST, new_maze=False):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
@@ -143,8 +143,12 @@ class GridWorldEnv(gym.Env):
             }
         )
 
-        self.maze=MAZE
-        self.wall_list = WALL_LIST
+        if new_maze:
+            self.maze, self.wall_list = create_maze()
+        else:
+            self.maze = MAZE
+            self.wall_list = WALL_LIST
+
         print(self.maze)
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
@@ -227,9 +231,9 @@ class GridWorldEnv(gym.Env):
 
         # An episode is done iff the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
-        reward = 10 if terminated else -0.01  # Binary sparse rewards
+        reward = 100 if terminated else -0.1  # Binary sparse rewards
         if not terminated and np.array_equal(self._agent_location, prev_location):
-            reward = -0.5
+            reward = -100
         observation = self._get_obs()
         info = self._get_info()
 
