@@ -3,7 +3,7 @@ import gym
 from gym import spaces
 import pygame
 import numpy as np
-import config as c
+from maze_project import config_maze as c
 
 
 def create_maze(size=c.SIZE):
@@ -198,7 +198,7 @@ class GridWorldEnv(gym.Env):
 
         self._target_location = np.asarray([self.size - 1, self.size - 1])
         # Choose the agent's location uniformly at random within the maze
-        self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+        self._agent_location = np.asarray([0, 0]) # self.np_random.integers(0, self.size, size=2, dtype=int)
         while self._agent_location.tolist() in self.wall_list or np.array_equal(self._target_location, self._agent_location):
             self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
@@ -231,9 +231,10 @@ class GridWorldEnv(gym.Env):
 
         # An episode is done iff the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
-        reward = 1000 if terminated else -0.04  # Binary sparse rewards
+        scale = 10000
+        reward = scale * 2 if terminated else -0.0004 * scale  # Binary sparse rewards
         if not terminated and np.array_equal(self._agent_location, prev_location):
-            reward = -10
+            reward = -0.01 * scale
         observation = self._get_obs()
         info = self._get_info()
 
