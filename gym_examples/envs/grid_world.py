@@ -6,6 +6,24 @@ import numpy as np
 from maze_project import config_maze as c
 
 
+CUSTOM_MAZE = np.asarray([[ 0., -1.,  0.,  0.,  0.,  0.,  0.,],
+                          [ 0., -1., -1., -1., -1., -1.,  0.,],
+                          [ 0.,  0.,  0.,  0.,  0., -1.,  0.,],
+                          [ 0., -1., -1., -1.,  0., -1.,  0.,],
+                          [ 0., -1.,  0.,  0.,  0., -1.,  0.,],
+                          [-1., -1., -1., -1.,  0., -1.,  0.,],
+                          [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,]])
+
+CUSTOM_WALL_LIST = list(np.asarray(np.where(CUSTOM_MAZE<0)).T.tolist())
+
+CUSTOM_MAZE_5 = np.asarray([[ 0.,  0.,  0.,  0.,  0.],
+                            [-1., -1.,  0., -1.,  0.],
+                            [ 0.,  0.,  0., -1., -1.],
+                            [-1., -1.,  0.,  0,   0.],
+                            [ 0.,  0.,  0., -1.,  0.]])
+
+CUSTOM_WALL_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5<0)).T.tolist())
+
 def create_maze(size=c.SIZE):
     '''Build random maze within grid world. algorithm works with uneven number of cells.'''
 
@@ -146,8 +164,8 @@ class GridWorldEnv(gym.Env):
         if new_maze:
             self.maze, self.wall_list = create_maze()
         else:
-            self.maze = MAZE
-            self.wall_list = WALL_LIST
+            self.maze = CUSTOM_MAZE_5
+            self.wall_list = CUSTOM_WALL_LIST_5
 
         print(self.maze)
 
@@ -231,10 +249,10 @@ class GridWorldEnv(gym.Env):
 
         # An episode is done iff the agent has reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
-        scale = 10000
-        reward = scale * 2 if terminated else -0.0004 * scale  # Binary sparse rewards
+        scale = 1
+        reward = scale * 1 if terminated else -0.01 * scale  # Binary sparse rewards
         if not terminated and np.array_equal(self._agent_location, prev_location):
-            reward = -0.01 * scale
+            reward = -0.1 * scale
         observation = self._get_obs()
         info = self._get_info()
 
