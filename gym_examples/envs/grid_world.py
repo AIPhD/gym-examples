@@ -16,13 +16,14 @@ CUSTOM_MAZE = np.asarray([[ 0., -1.,  0.,  0.,  0.,  0.,  0.,],
 
 CUSTOM_WALL_LIST = list(np.asarray(np.where(CUSTOM_MAZE<0)).T.tolist())
 
-CUSTOM_MAZE_5 = np.asarray([[ 0.,  0.,  0.,  0.,  0.],
+CUSTOM_MAZE_5 = np.asarray([[ 0.,  0.,  0.,  0.,  2.],
                             [-1., -1.,  0., -1.,  0.],
-                            [ 0.,  0.,  0., -1., -1.],
+                            [ 0.,  2,  0., -1., -1.],
                             [-1., -1.,  0.,  0,   0.],
-                            [ 0.,  0.,  0., -1.,  0.]])
+                            [ 0.,  0.,  2, -1.,  0.]])
 
 CUSTOM_WALL_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5<0)).T.tolist())
+CUSTOM_CCOIN_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5==2)).T.tolist())
 
 def create_maze(size=c.SIZE):
     '''Build random maze within grid world. algorithm works with uneven number of cells.'''
@@ -140,14 +141,14 @@ def create_maze(size=c.SIZE):
         del sample_walls[new_cell_list_position]
         # print(maze)
 
-    return maze, list(np.asarray(np.where(maze<0)).T.tolist())
+    return list(np.asarray(np.where(maze<0)).T.tolist()), list(np.asarray(np.where(maze==2)).T.tolist())
 
-MAZE, WALL_LIST = create_maze()
+WALL_LIST, COIN_LIST = create_maze()
 
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=c.SIZE, maze=MAZE, wall_list=WALL_LIST, new_maze=False):
+    def __init__(self, render_mode=None, size=c.SIZE, wall_list=WALL_LIST, coin_list=COIN_LIST, new_maze=False):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
@@ -157,17 +158,18 @@ class GridWorldEnv(gym.Env):
             {
                 "agent": spaces.Box(0, size - 1, shape=(2,), dtype=int),
                 "target": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "walls": spaces.Box(0, size - 1, shape=(2,), dtype=int)
+                "walls": spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                "coins": spaces.Box(0, size - 1, shape=(2,), dtype=int)
             }
         )
 
         if new_maze:
-            self.maze, self.wall_list = create_maze()
+            self.wall_list, self.coin_list = create_maze()
         else:
-            self.maze = CUSTOM_MAZE_5
             self.wall_list = CUSTOM_WALL_LIST_5
+            self.coinlist = CUSTOM_COIN_LIST_5 
 
-        print(self.maze)
+        # print(self.maze)
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
         self.action_space = spaces.Discrete(4)
@@ -200,7 +202,8 @@ class GridWorldEnv(gym.Env):
     def _get_obs(self):
         return {"agent": self._agent_location,
                 "target": self._target_location,
-                "walls": self.wall_list}
+                "walls": self.wall_list,
+                "coins": self.coin_list}
 
     def _get_info(self):
         return {
@@ -256,6 +259,10 @@ class GridWorldEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
+        if self._agent_location.tolist() in self.coin_list:
+            self.coinlist.remove(self._agent_location.tolist())
+            reward = 0.1 * scale
+
         if self.render_mode == "human":
             self._render_frame()
 
@@ -295,6 +302,14 @@ class GridWorldEnv(gym.Env):
             (self._agent_location + 0.5) * pix_square_size,
             pix_square_size / 3,
         )
+
+        for coin in self.coin_list:
+            pygame.draw.circle(
+                canvas,
+                (255, 255, 0),
+                (coin + 0.5) * pix_square_size,
+                pix_square_size / 3
+            )
 
         for wall in self.wall_list:
             wall = np.asarray(wall)
