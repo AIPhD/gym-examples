@@ -14,16 +14,17 @@ CUSTOM_MAZE = np.asarray([[ 0., -1.,  0.,  0.,  0.,  0.,  0.,],
                           [-1., -1., -1., -1.,  0., -1.,  0.,],
                           [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,]])
 
-CUSTOM_WALL_LIST = list(np.asarray(np.where(CUSTOM_MAZE<0)).T.tolist())
+CUSTOM_WALL_LIST = list(np.asarray(np.where(CUSTOM_MAZE==-1)).T.tolist())
 
 CUSTOM_MAZE_5 = np.asarray([[ 0.,  0.,  0.,  0.,  2.],
-                            [-1., -1.,  0., -1.,  0.],
-                            [ 0.,  2,  0., -1., -1.],
+                            [-1., -1.,  0., -1.,  -2],
+                            [ -2,  2,  0., -1., -1.],
                             [-1., -1.,  0.,  0,   0.],
                             [ 0.,  0.,  2, -1.,  0.]])
 
 CUSTOM_WALL_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5<0)).T.tolist())
-CUSTOM_CCOIN_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5==2)).T.tolist())
+CUSTOM_COIN_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5==2)).T.tolist())
+CUSTOM_TRAP_LIST_5 = list(np.asarray(np.where(CUSTOM_MAZE_5==-2)).T.tolist())
 
 def create_maze(size=c.SIZE):
     '''Build random maze within grid world. algorithm works with uneven number of cells.'''
@@ -141,9 +142,12 @@ def create_maze(size=c.SIZE):
         del sample_walls[new_cell_list_position]
         # print(maze)
 
-    return list(np.asarray(np.where(maze<0)).T.tolist()), list(np.asarray(np.where(maze==2)).T.tolist())
+    walls = list(np.asarray(np.where(maze==-1)).T.tolist())
+    coins = list(np.asarray(np.where(maze==2)).T.tolist())
+    traps = list(np.asarray(np.where(maze==-2)).T.tolist())
+    return walls, coins, traps
 
-WALL_LIST, COIN_LIST = create_maze()
+WALL_LIST, COIN_LIST, TRAP_LIST = create_maze()
 
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -159,15 +163,17 @@ class GridWorldEnv(gym.Env):
                 "agent": spaces.Box(0, size - 1, shape=(2,), dtype=int),
                 "target": spaces.Box(0, size - 1, shape=(2,), dtype=int),
                 "walls": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "coins": spaces.Box(0, size - 1, shape=(2,), dtype=int)
+                "coins": spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                "traps": spaces.Box(0, size - 1, shape=(2,), dtype=int)
             }
         )
 
         if new_maze:
-            self.wall_list, self.coin_list = create_maze()
+            self.wall_list, self.coin_list, self.trap_list = create_maze()
         else:
             self.wall_list = CUSTOM_WALL_LIST_5
-            self.coinlist = CUSTOM_COIN_LIST_5 
+            self.coin_list = CUSTOM_COIN_LIST_5 
+            self.trap_list = CUSTOM_TRAP_LIST_5
 
         # print(self.maze)
 
@@ -203,7 +209,8 @@ class GridWorldEnv(gym.Env):
         return {"agent": self._agent_location,
                 "target": self._target_location,
                 "walls": self.wall_list,
-                "coins": self.coin_list}
+                "coins": self.coin_list,
+                "traps": self.trap_list}
 
     def _get_info(self):
         return {
@@ -251,20 +258,37 @@ class GridWorldEnv(gym.Env):
             self._agent_location = self._agent_location - direction
 
         # An episode is done iff the agent has reached the target
-        terminated = np.array_equal(self._agent_location, self._target_location)
-        scale = 1
-        reward = scale * 1 if terminated else -0.01 * scale  # Binary sparse rewards
-        if not terminated and np.array_equal(self._agent_location, prev_location):
+        succeded = np.array_equal(self._agent_location, self._target_location)
+        failed = True if self._agent_location.tolist() in self.trap_list else False
+        scale = 1  # Binary sparse rewards
+
+        if succeded:
+            reward = scale * 1
+
+        elif failed:
+            reward = -1 * scale
+
+        elif np.array_equal(self._agent_location, prev_location):
             reward = -0.1 * scale
+
+        elif self._agent_location.tolist() in self.coin_list:
+            self.coin_list.remove(self._agent_location.tolist())
+            reward = 0.1 * scale
+
+        else:
+            reward = -0.01
+
         observation = self._get_obs()
         info = self._get_info()
 
-        if self._agent_location.tolist() in self.coin_list:
-            self.coinlist.remove(self._agent_location.tolist())
-            reward = 0.1 * scale
-
         if self.render_mode == "human":
             self._render_frame()
+
+        if succeded or failed:
+            terminated = True
+
+        else:
+            terminated = False
 
         return observation, reward, terminated, False, info
 
@@ -289,7 +313,7 @@ class GridWorldEnv(gym.Env):
         # First we draw the target
         pygame.draw.rect(
             canvas,
-            (255, 0, 0),
+            (0, 255, 0),
             pygame.Rect(
                 pix_square_size * self._target_location,
                 (pix_square_size, pix_square_size),
@@ -304,6 +328,7 @@ class GridWorldEnv(gym.Env):
         )
 
         for coin in self.coin_list:
+            coin = np.asarray(coin)
             pygame.draw.circle(
                 canvas,
                 (255, 255, 0),
@@ -311,10 +336,21 @@ class GridWorldEnv(gym.Env):
                 pix_square_size / 3
             )
 
+        for trap in self.trap_list:
+            trap = np.asarray(trap)
+            pygame.draw.rect(
+                canvas,
+                (255, 0, 0),
+                pygame.Rect(
+                    trap * pix_square_size,
+                    (pix_square_size, pix_square_size),
+            )
+        )
+
         for wall in self.wall_list:
             wall = np.asarray(wall)
             pygame.draw.rect(canvas,
-                             (0, 255, 0),
+                             (0, 0, 0),
                              pygame.Rect(
                                 pix_square_size * wall,
                                 (pix_square_size, pix_square_size),
