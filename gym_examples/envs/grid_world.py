@@ -145,7 +145,7 @@ def create_maze(size=c.SIZE):
     return maze
 
 
-def create_environment(game, size=c.SIZE):
+def create_environment(game, custom_walls=None, size=c.SIZE):
 
     obj_list = []
 
@@ -154,13 +154,24 @@ def create_environment(game, size=c.SIZE):
             obj_list.append(np.asarray([i, j]).tolist())
 
     obj_list.remove(np.asarray([0, 0]).tolist())
+    obj_list.remove(np.asarray([0, 1]).tolist())
+    obj_list.remove(np.asarray([1, 0]).tolist())
     obj_list.remove(np.asarray([c.SIZE-1, c.SIZE-1]).tolist())
+    obj_list.remove(np.asarray([c.SIZE-1, c.SIZE-2]).tolist())
+    obj_list.remove(np.asarray([c.SIZE-2, c.SIZE-1]).tolist())
 
     if game[2] == 1:
-        maze = create_maze(size)
-        walls = list(np.asarray(np.where(maze==-1)).T.tolist())
+        if custom_walls is None:
+            maze = create_maze(size)
+            walls = list(np.asarray(np.where(maze==-1)).T.tolist())
+        else:
+            walls = custom_walls
+
         for wall in walls:
-            obj_list.remove(wall)
+            if wall in obj_list:
+                obj_list.remove(wall)
+            else:
+                walls.remove(wall)
 
     else:
         walls = []
@@ -191,7 +202,7 @@ WALL_LIST, COIN_LIST, TRAP_LIST = create_environment([1, 1, 1])
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, game=[1, 0, 0], render_mode=None, size=c.SIZE, wall_list=WALL_LIST, coin_list=COIN_LIST, new_maze=True):
+    def __init__(self, game=[1, 0, 0], render_mode=None, size=c.SIZE, new_maze=True):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
 
@@ -208,7 +219,7 @@ class GridWorldEnv(gym.Env):
         )
 
         if new_maze:
-            self.wall_list, self.coin_list, self.trap_list = create_environment(game, size=size)
+            self.wall_list, self.coin_list, self.trap_list = create_environment(game, CUSTOM_WALL_LIST_5, size=size)
         else:
             self.wall_list = CUSTOM_WALL_LIST_5
             self.coin_list = CUSTOM_COIN_LIST_5.copy() 
@@ -310,14 +321,14 @@ class GridWorldEnv(gym.Env):
             reward = -1 * scale
 
         elif np.array_equal(self._agent_location, prev_location):
-            reward = -0.1 * scale
+            reward = -0.01 * scale
 
         elif self._agent_location.tolist() in self.coin_list:
             self.coin_list.remove(self._agent_location.tolist())
             reward = 0.1 * scale
 
         else:
-            reward = -0.01
+            reward = -0.01 * scale
 
         observation = self._get_obs()
         info = self._get_info()
