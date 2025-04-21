@@ -160,7 +160,7 @@ def create_environment(game, custom_walls=None, size=c.SIZE):
     obj_list.remove(np.asarray([c.SIZE-1, c.SIZE-2]).tolist())
     obj_list.remove(np.asarray([c.SIZE-2, c.SIZE-1]).tolist())
 
-    if game[2] == 1:
+    if game[3] == 1:
         if custom_walls is None:
             maze = create_maze(size)
             walls = list(np.asarray(np.where(maze==-1)).T.tolist())
@@ -176,8 +176,8 @@ def create_environment(game, custom_walls=None, size=c.SIZE):
     else:
         walls = []
 
-    if game[0] == 1:
-        coins = random.sample(obj_list, 3)
+    if game[1] == 1:
+        coins = random.sample(obj_list, 5)
 
         for coin in coins:
             obj_list.remove(coin)
@@ -186,7 +186,7 @@ def create_environment(game, custom_walls=None, size=c.SIZE):
         coins = []
 
 
-    if game[1] == 1:
+    if game[2] == 1:
         traps = random.sample(obj_list, 2)
 
         for trap in traps:
@@ -195,9 +195,15 @@ def create_environment(game, custom_walls=None, size=c.SIZE):
     else:
         traps = []
 
-    return walls, coins, traps
+    if game[0] == 1:
+        navigate = True
 
-WALL_LIST, COIN_LIST, TRAP_LIST = create_environment([1, 1, 1])
+    else:
+        navigate = False
+
+    return walls, coins, traps, navigate
+
+WALL_LIST, COIN_LIST, TRAP_LIST, NAVIGATE = create_environment([1, 1, 1, 1])
 
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -219,13 +225,13 @@ class GridWorldEnv(gym.Env):
         )
 
         if new_maze:
-            self.wall_list, self.coin_list, self.trap_list = create_environment(game, CUSTOM_WALL_LIST_5, size=size)
+            self.wall_list, self.coin_list, self.trap_list, self.navigate = create_environment(game, size=size)
         else:
             self.wall_list = CUSTOM_WALL_LIST_5
             self.coin_list = CUSTOM_COIN_LIST_5.copy() 
             self.trap_list = CUSTOM_TRAP_LIST_5
+            self.navigate = NAVIGATE
 
-        # print(self.maze)
 
         # We have 4 actions, corresponding to "right", "up", "left", "down", "right"
         self.action_space = spaces.Discrete(4)
@@ -263,18 +269,26 @@ class GridWorldEnv(gym.Env):
                 "traps": self.trap_list}
 
     def _get_info(self):
-        return {
-            "distance": np.linalg.norm(
-                self._agent_location - self._target_location, ord=1
-            )
+        if self.navigate:
+            return {
+                "distance": np.linalg.norm(
+                    self._agent_location - np.asarray(self._target_location), ord=1
+                )
         }
+        else:
+            return  {"distance": np.linalg.norm(
+                    self._agent_location, ord=1
+                )
+            }
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
-
-        self._target_location = np.asarray([self.size - 1, self.size - 1])
+        if self.navigate:
+            self._target_location = [np.asarray([self.size - 1, self.size - 1]).tolist()]
+        else:
+            self._target_location = []
         # Choose the agent's location uniformly at random within the maze
         self._agent_location = np.asarray([0, 0]) # self.np_random.integers(0, self.size, size=2, dtype=int)
         # self.coin_list = CUSTOM_COIN_LIST_5.copy()
@@ -290,12 +304,12 @@ class GridWorldEnv(gym.Env):
         #     )
 
         observation = self._get_obs()
-        info = self._get_info()
+        # info = self._get_info()
 
         if self.render_mode == "human":
             self._render_frame()
 
-        return observation, info
+        return observation
 
     def step(self, action):
         # Map the action (element of {0,1,2,3}) to the direction we walk in
@@ -310,7 +324,7 @@ class GridWorldEnv(gym.Env):
             self._agent_location = self._agent_location - direction
 
         # An episode is done iff the agent has reached the target
-        succeded = np.array_equal(self._agent_location, self._target_location)
+        succeded = True if self._agent_location.tolist() in self._target_location else False
         failed = True if self._agent_location.tolist() in self.trap_list else False
         scale = 1  # Binary sparse rewards
 
@@ -318,14 +332,17 @@ class GridWorldEnv(gym.Env):
             reward = scale * 1
 
         elif failed:
-            reward = -1 * scale
+            reward = -10 * scale
 
         elif np.array_equal(self._agent_location, prev_location):
-            reward = -0.01 * scale
+            reward = -0.02 * scale
 
         elif self._agent_location.tolist() in self.coin_list:
             self.coin_list.remove(self._agent_location.tolist())
-            reward = 0.1 * scale
+            reward = 1/1 * scale
+            if not self._target_location:
+                if not self.coin_list:
+                    succeded = True
 
         else:
             reward = -0.01 * scale
@@ -363,14 +380,17 @@ class GridWorldEnv(gym.Env):
         )  # The size of a single grid square in pixels
 
         # First we draw the target
-        pygame.draw.rect(
-            canvas,
-            (0, 255, 0),
-            pygame.Rect(
-                pix_square_size * self._target_location,
-                (pix_square_size, pix_square_size),
-            ),
-        )
+
+        for target in self._target_location:
+            target = np.asarray(target)
+            pygame.draw.rect(
+                canvas,
+                (0, 255, 0),
+                pygame.Rect(
+                    pix_square_size * target,
+                    (pix_square_size, pix_square_size),
+                ),
+            )
         # Now we draw the agent
         pygame.draw.circle(
             canvas,
