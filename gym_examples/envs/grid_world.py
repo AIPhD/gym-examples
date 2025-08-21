@@ -1,8 +1,9 @@
 import random
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import pygame
 import numpy as np
+import torch
 from maze_project import config_maze as c
 
 
@@ -205,22 +206,48 @@ def create_environment(game, custom_walls=None, size=c.SIZE):
 
 WALL_LIST, COIN_LIST, TRAP_LIST, NAVIGATE = create_environment([1, 1, 1, 1])
 
+
+def create_fc_state_vector_mult_proc(observation):
+    '''Convert Observation output from environmnet into a state variable for regular NNs
+       in a multi-processing setting.'''
+
+    state_vector = np.zeros(5, c.SIZE, c.SIZE).to(c.DEVICE)
+    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
+    # state_vector[1, observation['target'][0], observation['target'][1]] = 1
+
+    for target in observation['target']:
+        state_vector[1, target[0], target[1]] = 1
+
+    for coin in observation['coins']:
+        state_vector[2, coin[0], coin[1]] = 1
+
+    for trap in observation['traps']:
+        state_vector[2, trap[0], trap[1]] = 1
+
+    for wall in observation['walls']:
+        state_vector[2, wall[0], wall[1]] = 1
+
+    return state_vector
+
 class GridWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, game=[1, 0, 0], render_mode=None, size=c.SIZE, new_maze=True):
+    def __init__(self, game, render_mode=None, size=c.SIZE, new_maze=True):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the PyGame window
+        self.no_steps = 0
+        self.size = size
+        self.game = game
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2, i.e. MultiDiscrete([size, size]).
         self.observation_space = spaces.Dict(
             {
-                "agent": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "target": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "walls": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "coins": spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "traps": spaces.Box(0, size - 1, shape=(2,), dtype=int)
+                "agent": spaces.Box(0, size - 1, shape=(size, size), dtype=np.int64),
+                "target": spaces.Box(0, size - 1, shape=(size, size), dtype=np.int64),
+                "walls": spaces.Box(0, size - 1, shape=(size, size), dtype=np.int64),
+                "coins": spaces.Box(0, size - 1, shape=(size, size), dtype=np.int64),
+                "traps": spaces.Box(0, size - 1, shape=(size, size), dtype=np.int64)
             }
         )
 
@@ -262,11 +289,30 @@ class GridWorldEnv(gym.Env):
         self.clock = None
 
     def _get_obs(self):
-        return {"agent": self._agent_location,
-                "target": self._target_location,
-                "walls": self.wall_list,
-                "coins": self.coin_list,
-                "traps": self.trap_list}
+        agent_state_vector = np.zeros((self.size, self.size), dtype=np.int64)
+        agent_state_vector[self._agent_location[0], self._agent_location[1]] = 1
+        target_state_vector = np.zeros((self.size, self.size), dtype=np.int64)
+        coin_state_vector = np.zeros((self.size, self.size), dtype=np.int64)
+        wall_state_vector = np.zeros((self.size, self.size), dtype=np.int64)
+        trap_state_vector = np.zeros((self.size, self.size), dtype=np.int64)
+
+        for target in self._target_location:
+            target_state_vector[target[0], target[1]] = 1
+
+        for coin in self.coin_list:
+            coin_state_vector[coin[0], coin[1]] = 1
+
+        for wall in self.wall_list:
+            wall_state_vector[wall[0], wall[1]] = 1
+
+        for trap in self.trap_list:
+            trap_state_vector[trap[0], trap[1]] = 1
+        # print(wall_state_vector)
+        return {"agent": agent_state_vector,
+                "target": target_state_vector,
+                "walls": wall_state_vector,
+                "coins": coin_state_vector,
+                "traps": trap_state_vector}
 
     def _get_info(self):
         if self.navigate:
@@ -285,6 +331,8 @@ class GridWorldEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
+        self.wall_list, self.coin_list, self.trap_list, self.navigate = create_environment(self.game, size=self.size)
+
         if self.navigate:
             self._target_location = [np.asarray([self.size - 1, self.size - 1]).tolist()]
         else:
@@ -293,8 +341,10 @@ class GridWorldEnv(gym.Env):
         self._agent_location = np.asarray([0, 0]) # self.np_random.integers(0, self.size, size=2, dtype=int)
         # self.coin_list = CUSTOM_COIN_LIST_5.copy()
 
-        while self._agent_location.tolist() in self.wall_list or np.array_equal(self._target_location, self._agent_location):
-            self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+        # while self._agent_location.tolist() in self.wall_list or np.array_equal(self._target_location, self._agent_location):
+        #     self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+        
+
 
         # We will sample the target's location randomly until it does not coincide with the agent's location or the walls
         # self._target_location = self._agent_location
@@ -304,15 +354,16 @@ class GridWorldEnv(gym.Env):
         #     )
 
         observation = self._get_obs()
-        # info = self._get_info()
+        info = self._get_info()
 
         if self.render_mode == "human":
             self._render_frame()
 
-        return observation
+        return observation, {}
 
     def step(self, action):
         # Map the action (element of {0,1,2,3}) to the direction we walk in
+        self.no_steps += 1
         prev_location = self._agent_location
         direction = self._action_to_direction[action]
         # We use `np.clip` to make sure we don't leave the grid
@@ -329,7 +380,7 @@ class GridWorldEnv(gym.Env):
         scale = 1  # Binary sparse rewards
 
         if succeded:
-            reward = scale * 1
+            reward = scale * 5
 
         elif failed:
             reward = -10 * scale
@@ -353,11 +404,18 @@ class GridWorldEnv(gym.Env):
         if self.render_mode == "human":
             self._render_frame()
 
+
         if succeded or failed:
             terminated = True
+            self.no_steps = 0
 
         else:
             terminated = False
+        
+        # if self.no_steps >= 250:
+        #     terminated = True
+        #     self.no_steps = 0
+        #     print("No steps exceeded 250, terminating episode.")
 
         return observation, reward, terminated, False, info
 
@@ -458,6 +516,10 @@ class GridWorldEnv(gym.Env):
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2)
             )
+    
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
 
     def close(self):
         if self.window is not None:
